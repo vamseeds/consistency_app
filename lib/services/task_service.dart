@@ -1,15 +1,21 @@
-import 'package:consistency_app/models/task.dart';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import '../models/task.dart';
 
 class TaskService {
+  final String baseUrl = 'http://localhost:8080/api/tasks';
+
   Future<List<Task>> fetchTasks() async {
-    await Future.delayed(const Duration(seconds: 2)); // Simulate network delay
+    final response = await http.get(Uri.parse(baseUrl));
 
-    return [
-      Task(title: "API Task 1", dueDate: DateTime.now()),
+    if (response.statusCode == 200) {
+      List<dynamic> jsonList = jsonDecode(response.body);
 
-      Task(title: "API Task 2", isCompleted: true),
-
-      Task(title: "API Task 3"),
-    ];
+      return jsonList.map((json) => Task.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load tasks');
+    }
   }
 }
