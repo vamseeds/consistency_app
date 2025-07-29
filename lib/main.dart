@@ -1,3 +1,4 @@
+import 'package:consistency_app/services/task_service.dart';
 import 'package:flutter/material.dart';
 import 'models/task.dart';
 
@@ -26,13 +27,16 @@ class TaskListScreen extends StatefulWidget {
 }
 
 class _TaskListScreenState extends State<TaskListScreen> {
-  final List<Task> tasks = [
-    Task(title: "Morning workout", dueDate: DateTime.now()),
-    Task(title: "Read book", isCompleted: true),
-    Task(title: "Plan tomorrow"),
-  ];
-
+  final TaskService _taskService = TaskService();
+  final List<Task> tasks = [];
   final TextEditingController _controller = TextEditingController();
+  late Future<List<Task>> _taskFuture;
+
+  @override
+  void initState(){
+    super.initState();
+    _taskFuture = _taskService.fetchTasks();
+  }
 
   void _showAddTaskDialog() async {
     await showDialog(
@@ -116,48 +120,64 @@ class _TaskListScreenState extends State<TaskListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('My Tasks')),
-      body: Column(
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text(
-              'Your Tasks',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: tasks.length,
-              itemBuilder: (context, index) {
-                final task = tasks[index];
-                return ListTile(
-                  leading: Checkbox(
-                    value: task.isCompleted,
-                    onChanged: (value) {
-                      setState(() {
-                        task.toggleCompletion();
-                      });
+      body: FutureBuilder<List<Task>>(
+        future: _taskFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No tasks found'));
+          } else {
+            if(tasks.isEmpty){
+            tasks.addAll(snapshot.data!);
+            }
+            return Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text(
+                    'Your Tasks',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: tasks.length,
+                    itemBuilder: (context, index) {
+                      final task = tasks[index];
+                      return ListTile(
+                        leading: Checkbox(
+                          value: task.isCompleted,
+                          onChanged: (value) {
+                            setState(() {
+                              task.toggleCompletion();
+                            });
+                          },
+                        ),
+                        title: Text(
+                          task.title,
+                          style: TextStyle(
+                            color: task.isCompleted
+                                ? Colors.grey
+                                : (task.dueDate != null &&
+                                          task.dueDate!.isBefore(DateTime.now())
+                                      ? Colors.red
+                                      : Colors.black),
+                          ),
+                        ),
+                        subtitle: task.dueDate != null
+                            ? Text(task.dueDate.toString().split(' ')[0])
+                            : null,
+                      );
                     },
                   ),
-                  title: Text(
-                    task.title,
-                    style: TextStyle(
-                      color: task.isCompleted
-                          ? Colors.grey
-                          : (task.dueDate != null &&
-                                    task.dueDate!.isBefore(DateTime.now())
-                                ? Colors.red
-                                : Colors.black),
-                    ),
-                  ),
-                  subtitle: task.dueDate != null
-                      ? Text(task.dueDate.toString().split(' ')[0])
-                      : null,
-                );
-              },
-            ),
-          ),
-        ],
+                ),
+              ],
+            );
+          }
+        },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddTaskDialog,
