@@ -13,14 +13,14 @@ class Task {
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
-        'isCompleted': isCompleted,
+        'completed': isCompleted,
         'dueDate': dueDate?.toIso8601String(),
       };
 
   factory Task.fromJson(Map<String, dynamic> json) => Task(
         id: json['id'],
         title: json['title'],
-        isCompleted: json['isCompleted'] ?? false,
+        isCompleted: json['completed'] ?? false,
         dueDate: json['dueDate'] != null ? DateTime.parse(json['dueDate']) : null,
       );
 }
