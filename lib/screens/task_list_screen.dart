@@ -1,5 +1,7 @@
+import 'package:consistency_app/screens/login_screen.dart';
 import 'package:consistency_app/services/task_service.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task.dart';
 
 class TaskListScreen extends StatefulWidget {
@@ -12,12 +14,54 @@ class TaskListScreen extends StatefulWidget {
 class _TaskListScreenState extends State<TaskListScreen> {
   final TaskService _taskService = TaskService();
   final List<Task> tasks = [];
-  late Future<List<Task>> _taskFuture;
+  final List<Task> filteredTasks = []; // New: Filtered tasks
+  String? selectedFilter = 'All'; // New: Filter state
 
   @override
   void initState() {
     super.initState();
-    _taskFuture = _taskService.fetchTasks();
+    _fetchTasks();
+  }
+
+  void handleSessionExpired(var error) async {
+    if (error.toString().contains('Session expired')) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('jwt_token');
+      Navigator.pushReplacementNamed(context, '/login');
+    }
+  }
+
+  Future<void> _fetchTasks() async {
+    try {
+      final fetchedTasks = await _taskService.fetchTasks();
+      setState(() {
+        tasks.clear();
+        tasks.addAll(fetchedTasks);
+        filteredTasks.clear();
+        filteredTasks.addAll(tasks); // Initialize filteredTasks
+      });
+    } catch (e) {
+      print('Error fetching tasks: $e');
+      handleSessionExpired(e);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load tasks: $e')));
+    }
+  }
+
+  void _filterTasks(String? category) {
+    setState(() {
+      selectedFilter = category;
+      if (category == 'All') {
+        filteredTasks.clear();
+        filteredTasks.addAll(tasks);
+      } else {
+        filteredTasks.clear();
+        filteredTasks.addAll(
+          tasks.where((task) => task.category == category).toList(),
+        );
+      }
+    });
   }
 
   void _showAddTaskDialog() async {
@@ -43,8 +87,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       errorText: errorText,
                     ),
                     onChanged: (value) => setDialogState(() {
-                      errorText = value.isEmpty
-                          ? 'Title Cannot be empty'
+                      errorText = value.trim().isEmpty
+                          ? 'Title cannot be empty'
+                          : value.trim().length > 100
+                          ? 'Title must be 100 characters or less'
                           : null;
                     }),
                   ),
@@ -110,12 +156,17 @@ class _TaskListScreenState extends State<TaskListScreen> {
                             );
                             setState(() {
                               tasks.add(newTask);
+                              if (selectedFilter == 'All' ||
+                                  newTask.category == selectedFilter) {
+                                filteredTasks.add(newTask);
+                              }
                               controller.clear();
                               controller.dispose();
                             });
                             Navigator.pop(context);
                           } catch (e) {
                             print('Error adding task: $e');
+                            handleSessionExpired(e);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(content: Text('Failed to add task: $e')),
                             );
@@ -160,8 +211,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
                     ),
                     onChanged: (value) {
                       setDialogState(() {
-                        errorText = value.isEmpty
+                        errorText = value.trim().isEmpty
                             ? 'Title cannot be empty'
+                            : value.trim().length > 100
+                            ? 'Title must be 100 characters or less'
                             : null;
                       });
                     },
@@ -223,11 +276,19 @@ class _TaskListScreenState extends State<TaskListScreen> {
                               ),
                             );
                             setState(() {
-                              tasks[index] = updatedTask;
+                              tasks[tasks.indexWhere((t) => t.id == task.id)] =
+                                  updatedTask;
+                              if (selectedFilter == 'All' ||
+                                  updatedTask.category == selectedFilter) {
+                                filteredTasks[index] = updatedTask;
+                              } else {
+                                filteredTasks.removeAt(index);
+                              }
                             });
                             Navigator.pop(context);
                           } catch (e) {
                             print('Error updating task: $e');
+                            handleSessionExpired(e);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text('Failed to update task: $e'),
@@ -249,29 +310,57 @@ class _TaskListScreenState extends State<TaskListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Tasks')),
-      body: FutureBuilder<List<Task>>(
-        future: _taskFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('No tasks found'));
-          } else {
-            if (tasks.isEmpty) {
-              tasks.addAll(snapshot.data!);
-            }
-            return Column(
-              children: [
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: tasks.length,
+      appBar: AppBar(
+        title: const Text('Consistency Planner'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('jwt_token');
+              print('JWT token removed');
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Logged out successfully')),
+              );
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => LoginScreen()),
+                (route) => false,
+              );
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: DropdownButton<String>(
+              value: selectedFilter,
+              isExpanded: true,
+              hint: const Text('Filter by Category'),
+              items: ['All', 'Work', 'Personal', 'Other']
+                  .map(
+                    (category) => DropdownMenuItem(
+                      value: category,
+                      child: Text(category),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                _filterTasks(value);
+              },
+            ),
+          ),
+          Expanded(
+            child: filteredTasks.isEmpty
+                ? const Center(child: Text('No tasks available'))
+                : ListView.builder(
+                    itemCount: filteredTasks.length,
                     itemBuilder: (context, index) {
-                      final task = tasks[index];
+                      final task = filteredTasks[index];
                       return Dismissible(
-                        key: Key(task.id!), // Unique key for each task
+                        key: Key(task.id!),
                         background: Container(
                           color: Colors.red,
                           alignment: Alignment.centerRight,
@@ -283,20 +372,23 @@ class _TaskListScreenState extends State<TaskListScreen> {
                           try {
                             await _taskService.deleteTask(task.id!);
                             setState(() {
-                              tasks.removeAt(index);
+                              tasks.removeWhere((t) => t.id == task.id);
+                              filteredTasks.removeAt(index);
                             });
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(content: Text('${task.title} deleted')),
                             );
                           } catch (e) {
                             print('Error deleting task: $e');
+                            handleSessionExpired(e);
+
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text('Failed to delete task: $e'),
                               ),
                             );
                             setState(() {
-                              tasks.insert(index, task); // Revert on error
+                              filteredTasks.insert(index, task);
                             });
                           }
                         },
@@ -314,11 +406,15 @@ class _TaskListScreenState extends State<TaskListScreen> {
                                   final updatedTask = await _taskService
                                       .toggleTask(task.id!, value!);
                                   setState(() {
-                                    tasks[index] =
-                                        updatedTask; // Update local list
+                                    tasks[tasks.indexWhere(
+                                          (t) => t.id == task.id,
+                                        )] =
+                                        updatedTask;
+                                    filteredTasks[index] = updatedTask;
                                   });
                                 } catch (e) {
                                   print('Error toggling task: $e');
+                                  handleSessionExpired(e);
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
@@ -332,14 +428,11 @@ class _TaskListScreenState extends State<TaskListScreen> {
                             title: Text(
                               task.title,
                               style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
                                 color: task.isCompleted
                                     ? Colors.grey
-                                    : (task.dueDate != null &&
-                                              task.dueDate!.isBefore(
-                                                DateTime.now(),
-                                              )
-                                          ? Colors.red
-                                          : Colors.black),
+                                    : Colors.black,
                               ),
                             ),
                             subtitle: Column(
@@ -366,15 +459,11 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       );
                     },
                   ),
-                ),
-              ],
-            );
-          }
-        },
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddTaskDialog,
-
         child: const Icon(Icons.add),
       ),
     );
