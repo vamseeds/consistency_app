@@ -3,8 +3,9 @@ class Task {
   final String title;
   bool isCompleted;
   final DateTime? dueDate;
+  final String? category;
 
-  Task({this.id, required this.title, this.isCompleted = false, this.dueDate});
+  Task({this.id, required this.title, this.isCompleted = false, this.dueDate,this.category});
 
   void toggleCompletion() {
     isCompleted = !isCompleted;
@@ -15,6 +16,7 @@ class Task {
         'title': title,
         'completed': isCompleted,
         'dueDate': dueDate?.toIso8601String(),
+        'category':category,
       };
 
   factory Task.fromJson(Map<String, dynamic> json) => Task(
@@ -22,5 +24,6 @@ class Task {
         title: json['title'],
         isCompleted: json['completed'] ?? false,
         dueDate: json['dueDate'] != null ? DateTime.parse(json['dueDate']) : null,
+        category: json['category'],
       );
 }

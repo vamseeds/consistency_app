@@ -86,6 +86,24 @@ class TaskService {
     }
   }
 
+  Future<Task> updateTask(Task task) async {
+        final token = await _getToken();
+        final response = await http.put(
+            Uri.parse('$baseUrl/${task.id}'),
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(task.toJson()),
+        );
+        print('PUT Response: ${response.statusCode} ${response.body}');
+        if (response.statusCode == 200) {
+            return Task.fromJson(jsonDecode(response.body));
+        } else {
+            throw Exception('Failed to update task: ${response.body}');
+        }
+    }
+
   Future<String> login(String username, String password) async {
     final response = await http.post(
       Uri.parse('http://localhost:8080/api/auth/login'),

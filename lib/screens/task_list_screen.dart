@@ -12,7 +12,6 @@ class TaskListScreen extends StatefulWidget {
 class _TaskListScreenState extends State<TaskListScreen> {
   final TaskService _taskService = TaskService();
   final List<Task> tasks = [];
-  final TextEditingController _controller = TextEditingController();
   late Future<List<Task>> _taskFuture;
 
   @override
@@ -25,8 +24,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
     await showDialog(
       context: context,
       builder: (context) {
+        final TextEditingController controller = TextEditingController();
         DateTime? dialogSelectedDate;
         String? errorText;
+        String? dropdownValue;
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
@@ -35,7 +36,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
-                    controller: _controller,
+                    controller: controller,
                     decoration: InputDecoration(
                       labelText: 'Task Title',
                       hintText: 'Enter task title',
@@ -47,6 +48,25 @@ class _TaskListScreenState extends State<TaskListScreen> {
                           : null;
                     }),
                   ),
+                  DropdownButton<String>(
+                    value: dropdownValue,
+                    hint: const Text('Select Category'),
+                    items: ['Work', 'Personal', 'Other']
+                        .map(
+                          (category) => DropdownMenuItem(
+                            value: category,
+
+                            child: Text(category),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        dropdownValue = value;
+                      });
+                    },
+                  ),
+
                   TextButton(
                     onPressed: () async {
                       final DateTime? picked = await showDatePicker(
@@ -71,22 +91,27 @@ class _TaskListScreenState extends State<TaskListScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () {
+                    controller.dispose();
+                    Navigator.pop(context);
+                  },
                   child: const Text('Cancel'),
                 ),
                 TextButton(
-                  onPressed: _controller.text.trim().isNotEmpty
+                  onPressed: controller.text.trim().isNotEmpty
                       ? () async {
                           try {
                             Task newTask = await _taskService.createTask(
                               Task(
-                                title: _controller.text.trim(),
+                                title: controller.text.trim(),
                                 dueDate: dialogSelectedDate,
+                                category: dropdownValue,
                               ),
                             );
                             setState(() {
                               tasks.add(newTask);
-                              _controller.clear();
+                              controller.clear();
+                              controller.dispose();
                             });
                             Navigator.pop(context);
                           } catch (e) {
@@ -98,6 +123,120 @@ class _TaskListScreenState extends State<TaskListScreen> {
                         }
                       : null,
                   child: const Text('Add'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showEditTaskDialog(Task task, int index) async {
+    final TextEditingController controller = TextEditingController(
+      text: task.title,
+    );
+    String? selectedCategory = task.category;
+    DateTime? selectedDate = task.dueDate;
+    String? errorText;
+    await showDialog(
+      context: context,
+      builder: (context) {
+        String? dialogCategory = selectedCategory;
+        DateTime? dialogSelectedDate = selectedDate;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Edit Task'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: controller,
+                    decoration: InputDecoration(
+                      labelText: 'Task Title',
+                      hintText: 'Enter task title',
+                      errorText: errorText,
+                    ),
+                    onChanged: (value) {
+                      setDialogState(() {
+                        errorText = value.isEmpty
+                            ? 'Title cannot be empty'
+                            : null;
+                      });
+                    },
+                  ),
+                  DropdownButton<String>(
+                    value: dialogCategory,
+                    hint: const Text('Select Category'),
+                    isExpanded: true,
+                    items: ['Work', 'Personal', 'Other'].map((String category) {
+                      return DropdownMenuItem<String>(
+                        value: category,
+                        child: Text(category),
+                      );
+                    }).toList(),
+                    onChanged: (String? newValue) {
+                      setDialogState(() {
+                        dialogCategory = newValue;
+                      });
+                    },
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      final DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: dialogSelectedDate ?? DateTime.now(),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime(2026),
+                      );
+                      if (picked != null) {
+                        setDialogState(() {
+                          dialogSelectedDate = picked;
+                        });
+                      }
+                    },
+                    child: Text(
+                      dialogSelectedDate == null
+                          ? 'Select Due Date'
+                          : dialogSelectedDate.toString().split(' ')[0],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: controller.text.trim().isNotEmpty
+                      ? () async {
+                          try {
+                            Task updatedTask = await _taskService.updateTask(
+                              Task(
+                                id: task.id,
+                                title: controller.text.trim(),
+                                isCompleted: task.isCompleted,
+                                dueDate: dialogSelectedDate,
+                                category: dialogCategory,
+                              ),
+                            );
+                            setState(() {
+                              tasks[index] = updatedTask;
+                            });
+                            Navigator.pop(context);
+                          } catch (e) {
+                            print('Error updating task: $e');
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to update task: $e'),
+                              ),
+                            );
+                          }
+                        }
+                      : null,
+                  child: const Text('Save'),
                 ),
               ],
             );
@@ -126,13 +265,6 @@ class _TaskListScreenState extends State<TaskListScreen> {
             }
             return Column(
               children: [
-                const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                    'Your Tasks',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                ),
                 Expanded(
                   child: ListView.builder(
                     itemCount: tasks.length,
@@ -168,43 +300,68 @@ class _TaskListScreenState extends State<TaskListScreen> {
                             });
                           }
                         },
-                        child: ListTile(
-                          leading: Checkbox(
-                            value: task.isCompleted,
-                            onChanged: (value) async {
-                              try {
-                                final updatedTask = await _taskService
-                                    .toggleTask(task.id!, value!);
-                                setState(() {
-                                  tasks[index] =
-                                      updatedTask; // Update local list
-                                });
-                              } catch (e) {
-                                print('Error toggling task: $e');
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Failed to toggle task: $e'),
-                                  ),
-                                );
-                              }
-                            },
+                        child: Card(
+                          elevation: 4,
+                          margin: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 8,
                           ),
-                          title: Text(
-                            task.title,
-                            style: TextStyle(
-                              color: task.isCompleted
-                                  ? Colors.grey
-                                  : (task.dueDate != null &&
-                                            task.dueDate!.isBefore(
-                                              DateTime.now(),
-                                            )
-                                        ? Colors.red
-                                        : Colors.black),
+                          child: ListTile(
+                            leading: Checkbox(
+                              value: task.isCompleted,
+                              onChanged: (value) async {
+                                try {
+                                  final updatedTask = await _taskService
+                                      .toggleTask(task.id!, value!);
+                                  setState(() {
+                                    tasks[index] =
+                                        updatedTask; // Update local list
+                                  });
+                                } catch (e) {
+                                  print('Error toggling task: $e');
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Failed to toggle task: $e',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                            title: Text(
+                              task.title,
+                              style: TextStyle(
+                                color: task.isCompleted
+                                    ? Colors.grey
+                                    : (task.dueDate != null &&
+                                              task.dueDate!.isBefore(
+                                                DateTime.now(),
+                                              )
+                                          ? Colors.red
+                                          : Colors.black),
+                              ),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (task.dueDate != null)
+                                  Text(task.dueDate!.toString().split(' ')[0]),
+                                if (task.category != null)
+                                  Text(
+                                    task.category!,
+                                    style: const TextStyle(
+                                      color: Colors.blue,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.blue),
+                              onPressed: () => _showEditTaskDialog(task, index),
                             ),
                           ),
-                          subtitle: task.dueDate != null
-                              ? Text(task.dueDate.toString().split(' ')[0])
-                              : null,
                         ),
                       );
                     },
