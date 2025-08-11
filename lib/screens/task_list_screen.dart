@@ -11,11 +11,19 @@ class TaskListScreen extends StatefulWidget {
   _TaskListScreenState createState() => _TaskListScreenState();
 }
 
+// Extension for date comparison
+extension DateOnlyCompare on DateTime {
+  bool isSameDate(DateTime other) {
+    return year == other.year && month == other.month && day == other.day;
+  }
+}
+
 class _TaskListScreenState extends State<TaskListScreen> {
   final TaskService _taskService = TaskService();
   final List<Task> tasks = [];
   final List<Task> filteredTasks = []; // New: Filtered tasks
   String? selectedFilter = 'All'; // New: Filter state
+  String? selectedDateFilter = 'All'; // Added for due date filtering
   bool isLoading = true; // New: Loading state
   bool sortAscending = true; // New: Sort state
 
@@ -62,14 +70,38 @@ class _TaskListScreenState extends State<TaskListScreen> {
   void _filterTasks(String? category) {
     setState(() {
       selectedFilter = category;
-      if (category == 'All') {
-        filteredTasks.clear();
-        filteredTasks.addAll(tasks);
-      } else {
-        filteredTasks.clear();
+      filteredTasks.clear();
+      var tempTasks = tasks
+          .where(
+            (task) =>
+                selectedFilter == 'All' || task.category == selectedFilter,
+          )
+          .toList();
+      if (selectedDateFilter == 'Today') {
+        final now = DateTime.now();
         filteredTasks.addAll(
-          tasks.where((task) => task.category == category).toList(),
+          tempTasks.where(
+            (task) => task.dueDate != null && task.dueDate!.isSameDate(now),
+          ),
         );
+      } else if (selectedDateFilter == 'This Week') {
+        final now = DateTime.now();
+        final startOfDay = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ); // Start of today
+        final weekEnd = startOfDay.add(const Duration(days: 7));
+        filteredTasks.addAll(
+          tempTasks.where(
+            (task) =>
+                task.dueDate != null &&
+                !task.dueDate!.isBefore(startOfDay) &&
+                task.dueDate!.isBefore(weekEnd),
+          ),
+        );
+      } else {
+        filteredTasks.addAll(tempTasks);
       }
       _sortTasks();
     });
@@ -268,7 +300,9 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       final DateTime? picked = await showDatePicker(
                         context: context,
                         initialDate: dialogSelectedDate ?? DateTime.now(),
-                        firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                        firstDate: DateTime.now().subtract(
+                          const Duration(days: 365),
+                        ),
                         lastDate: DateTime(2026),
                       );
                       if (picked != null) {
@@ -382,21 +416,52 @@ class _TaskListScreenState extends State<TaskListScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: DropdownButton<String>(
-                    value: selectedFilter,
-                    isExpanded: true,
-                    hint: const Text('Filter by Category'),
-                    items: ['All', 'Work', 'Personal', 'Other']
-                        .map(
-                          (category) => DropdownMenuItem(
-                            value: category,
-                            child: Text(category),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      _filterTasks(value);
-                    },
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButton<String>(
+                          value: selectedFilter,
+                          isExpanded: true,
+                          hint: const Text('Filter by Category'),
+                          items: ['All', 'Work', 'Personal', 'Other']
+                              .map(
+                                (category) => DropdownMenuItem(
+                                  value: category,
+                                  child: Text(category),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              selectedFilter = value;
+                              _filterTasks(value);
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButton<String>(
+                          value: selectedDateFilter,
+                          isExpanded: true,
+                          hint: const Text('Filter by Due Date'),
+                          items: ['All', 'Today', 'This Week']
+                              .map(
+                                (filter) => DropdownMenuItem(
+                                  value: filter,
+                                  child: Text(filter),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              selectedDateFilter = value;
+                              _filterTasks(selectedFilter);
+                            });
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Expanded(
@@ -446,78 +511,82 @@ class _TaskListScreenState extends State<TaskListScreen> {
                                   });
                                 }
                               },
-                              child: Card(
-                                elevation: 4,
-                                margin: const EdgeInsets.symmetric(
-                                  vertical: 4,
-                                  horizontal: 8,
-                                ),
-                                child: ListTile(
-                                  leading: Checkbox(
-                                    value: task.isCompleted,
-                                    onChanged: (value) async {
-                                      try {
-                                        final updatedTask = await _taskService
-                                            .toggleTask(task.id!, value!);
-                                        setState(() {
-                                          tasks[tasks.indexWhere(
-                                                (t) => t.id == task.id,
-                                              )] =
-                                              updatedTask;
-                                          filteredTasks[index] = updatedTask;
-                                        });
-                                      } catch (e) {
-                                        print('Error toggling task: $e');
-                                        handleSessionExpired(e);
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Failed to toggle task: $e',
+                              child: AnimatedOpacity(
+                                opacity: task.isCompleted ? 0.5 : 1.0,
+                                duration: const Duration(milliseconds: 300),
+                                child: Card(
+                                  elevation: 4,
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                    horizontal: 8,
+                                  ),
+                                  child: ListTile(
+                                    leading: Checkbox(
+                                      value: task.isCompleted,
+                                      onChanged: (value) async {
+                                        try {
+                                          final updatedTask = await _taskService
+                                              .toggleTask(task.id!, value!);
+                                          setState(() {
+                                            tasks[tasks.indexWhere(
+                                                  (t) => t.id == task.id,
+                                                )] =
+                                                updatedTask;
+                                            filteredTasks[index] = updatedTask;
+                                          });
+                                        } catch (e) {
+                                          print('Error toggling task: $e');
+                                          handleSessionExpired(e);
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Failed to toggle task: $e',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                    title: Text(
+                                      task.title,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                        color: task.isCompleted
+                                            ? Colors.grey
+                                            : Colors.black,
+                                      ),
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if (task.dueDate != null)
+                                          Text(
+                                            task.dueDate!.toString().split(
+                                              ' ',
+                                            )[0],
+                                          ),
+                                        if (task.category != null)
+                                          Text(
+                                            task.category!,
+                                            style: const TextStyle(
+                                              color: Colors.blue,
+                                              fontStyle: FontStyle.italic,
                                             ),
                                           ),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                  title: Text(
-                                    task.title,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w500,
-                                      color: task.isCompleted
-                                          ? Colors.grey
-                                          : Colors.black,
+                                      ],
                                     ),
-                                  ),
-                                  subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if (task.dueDate != null)
-                                        Text(
-                                          task.dueDate!.toString().split(
-                                            ' ',
-                                          )[0],
-                                        ),
-                                      if (task.category != null)
-                                        Text(
-                                          task.category!,
-                                          style: const TextStyle(
-                                            color: Colors.blue,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  trailing: IconButton(
-                                    icon: const Icon(
-                                      Icons.edit,
-                                      color: Colors.blue,
+                                    trailing: IconButton(
+                                      icon: const Icon(
+                                        Icons.edit,
+                                        color: Colors.blue,
+                                      ),
+                                      onPressed: () =>
+                                          _showEditTaskDialog(task, index),
                                     ),
-                                    onPressed: () =>
-                                        _showEditTaskDialog(task, index),
                                   ),
                                 ),
                               ),
