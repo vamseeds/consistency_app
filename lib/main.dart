@@ -1,4 +1,5 @@
 import 'package:consistency_app/screens/login_screen.dart';
+import 'package:consistency_app/screens/settings_screen.dart';
 import 'package:consistency_app/screens/task_list_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -65,6 +66,7 @@ class ConsistencyApp extends StatelessWidget {
             routes: {
                 '/login': (context) => LoginScreen(),
                 '/tasks': (context) => TaskListScreen(),
+                '/settings': (context) => SettingsScreen(),
             },
         );
     }

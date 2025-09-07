@@ -1,29 +1,42 @@
 class Task {
-  final String? id; // Add id for MongoDB
-  final String title;
-  bool isCompleted;
-  final DateTime? dueDate;
-  final String? category;
+  String? id; 
+  String title;
+  bool completed;
+  DateTime? dueDate;
+  String? category;
+  String? priority; // New field: Low, Medium, High
 
-  Task({this.id, required this.title, this.isCompleted = false, this.dueDate,this.category});
-
+  Task({
+    this.id,
+    required this.title,
+    this.completed = false,
+    this.dueDate,
+    this.category,
+    this.priority,
+  });
   void toggleCompletion() {
-    isCompleted = !isCompleted;
+    completed = !completed;
   }
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'completed': isCompleted,
-        'dueDate': dueDate?.toIso8601String(),
-        'category':category,
-      };
+ factory Task.fromJson(Map<String, dynamic> json) {
+    return Task(
+      id: json['id'] as String?,
+      title: json['title'] as String,
+      completed: json['completed'] as bool? ?? false,
+      dueDate: json['dueDate'] != null ? DateTime.parse(json['dueDate'] as String) : null,
+      category: json['category'] as String?,
+      priority: json['priority'] as String?,
+    );
+  }
 
-  factory Task.fromJson(Map<String, dynamic> json) => Task(
-        id: json['id'],
-        title: json['title'],
-        isCompleted: json['completed'] ?? false,
-        dueDate: json['dueDate'] != null ? DateTime.parse(json['dueDate']) : null,
-        category: json['category'],
-      );
-}
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'completed': completed,
+      'dueDate': dueDate?.toIso8601String(),
+      'category': category,
+      'priority': priority,
+    };
+  }
+  }
